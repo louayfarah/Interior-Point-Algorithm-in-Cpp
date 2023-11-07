@@ -86,7 +86,7 @@ public:
     {
         if(n != A.getN() || m != A.getM())
         {
-            cout << "Error: the dimensional problem occurred" << endl;
+            cout << "Error: the dimensional problem occurred in =" << endl;
             return;
         }
 
@@ -104,7 +104,7 @@ public:
     {
         if(n != A.getN() || m != A.getM())
         {
-            cout << "Error: the dimensional problem occurred" << endl;
+            cout << "Error: the dimensional problem occurred in +" << endl;
             Matrix err(0, 0);
             return err;
         }
@@ -128,7 +128,7 @@ public:
     {
         if(n != A.getN() || m != A.getM())
         {
-            cout << "Error: the dimensional problem occurred" << endl;
+            cout << "Error: the dimensional problem occurred in -" << endl;
             Matrix err(0, 0);
             return err;
         }
@@ -152,7 +152,7 @@ public:
     {
         if(m != A.getN())
         {
-            cout << "Error: the dimensional problem occurred" << endl;
+            cout << "Error: the dimensional problem occurred in x" << endl;
             Matrix err(0, 0);
             return err;
         }
@@ -397,7 +397,7 @@ ostream& operator<<(ostream &os, Matrix<double> &A)
 
 Matrix<double> calculateInverse(Matrix<double> A, int n)
 {
-    Matrix<double>* aug = A.augmentedMatrix();
+    Matrix<double> aug = *A.augmentedMatrix();
 
     int step = 1;
     for(int j = 1; j<=n-1; j++)
@@ -420,8 +420,8 @@ Matrix<double> calculateInverse(Matrix<double> A, int n)
             Matrix<double> temp = (*P)*(A);
             A = temp;
 
-            Matrix<double> temp2 = (*P)*(*aug);
-            *aug = temp2;
+            Matrix<double> temp2 = (*P)*(aug);
+            aug = temp2;
 
             step++;
         }
@@ -438,8 +438,8 @@ Matrix<double> calculateInverse(Matrix<double> A, int n)
 
             A = temp;
 
-            Matrix<double> temp2 = (*E)*(*aug);
-            *aug = temp2;
+            Matrix<double> temp2 = (*E)*(aug);
+            aug = temp2;
 
             step++;
         }
@@ -461,8 +461,8 @@ Matrix<double> calculateInverse(Matrix<double> A, int n)
 
             A = temp;
 
-            Matrix<double> temp2 = (*E)*(*aug);
-            *aug = temp2;
+            Matrix<double> temp2 = (*E)*(aug);
+            aug = temp2;
 
             step++;
         }
@@ -472,17 +472,17 @@ Matrix<double> calculateInverse(Matrix<double> A, int n)
     {
         for(int j = i+1; j<=2*n; j++)
         {
-            (*(aug->getGrid()))[i-1][j-1] /= (*(aug->getGrid()))[i-1][i-1];
+            (*(aug.getGrid()))[i-1][j-1] /= (*(aug.getGrid()))[i-1][i-1];
         }
 
-        (*(aug->getGrid()))[i-1][i-1] = 1;
+        (*(aug.getGrid()))[i-1][i-1] = 1;
     }
 
     for(int i = 1; i<=n; i++)
     {
         for(int j = 1; j<=n; j++)
         {
-            (*(A.getGrid()))[i-1][j-1] = (*(aug->getGrid()))[i-1][j-1+n];
+            (*(A.getGrid()))[i-1][j-1] = (*(aug.getGrid()))[i-1][j-1+n];
         }
     }
 
@@ -673,12 +673,93 @@ void simplexMethod(Matrix<double>* C, Matrix<double>* A, Matrix<double>* b, doub
 
 bool interior_point_solution_found(int iteration)
 {
-    if(iteration >= 10)
+    if(iteration >= 5)
         return true;
     return false;
 }
 
-void interiorPointAlgorithm(Matrix<double>* C, Matrix<double>* A, Matrix<double>* b, double precision, string purpose, Matrix<double>* initial_point, double alpha)
+
+Matrix<double> *generateRandomPoint(Matrix<double>* minBoundries, Matrix<double>* maxBoundries){
+    int n = minBoundries->getM();
+    Matrix<double> *generatedPoint = new Matrix<double>(n, 1);
+
+    // Generate a random point within the boundries of each variable
+    for(int i=0; i<n; i++){
+        double min = minBoundries->getAtIndex(0, i);
+        double max = maxBoundries->getAtIndex(0, i);
+        double generatedValue = min + static_cast<double>(rand()) / RAND_MAX * (max - min);
+        generatedPoint->setAtIndex(i, 0, generatedValue);
+    }
+
+    return generatedPoint;
+}
+
+bool inBoundPoint(Matrix<double>* A, Matrix<double>* b, Matrix<double>* point){
+    // Check if the point is in the bounded region
+    // Verify the validity of the constraints
+    int m = A->getN();
+    int n = A->getM() - m;
+    for(int i=0; i<m; i++){
+        // Constraint: a_1.x_1 + a_2.x_2 + a_3.x_3 + .. + a_n.x_n < b_m
+        double RHS = b->getAtIndex(i, 0);
+        double LHS = 0;
+        for(int j=0; j<n; j++){
+            LHS = LHS + (A->getAtIndex(i, j)*point->getAtIndex(j, 0));
+        }
+        if(LHS >= RHS) return false;
+    }
+    return true;
+}
+
+Matrix<double> *findInitialPoint(Matrix<double> *A, Matrix<double>* b){
+    int m = A->getN();
+    int n = A->getM() - m;
+
+    // Matrices to store the minimum and maximum boundries of each varible in the objective function
+    Matrix<double> *minBoundries = new Matrix<double>(1, n);
+    Matrix<double> *maxBoundries = new Matrix<double>(1, n);
+
+    // Calculate the maximum boundry for each variable in the objective function
+    for(int i=0; i<m; i++){
+        for(int j=0; j<n; j++){
+            double RHS = b->getAtIndex(i, 0);
+            double tmp = RHS / A->getAtIndex(i, j);
+            if(tmp > maxBoundries->getAtIndex(0, j)){
+                maxBoundries->setAtIndex(0, j, tmp);
+            }
+        }
+    }
+
+    // Check if the maximum boundary of a variable is negative (or zero)
+    for(int i=0; i<n; i++){
+        if(maxBoundries->getAtIndex(0, i) == 0){
+            return nullptr;
+        }
+    }
+
+    // Generate random points within the boundries of each variable
+    // Check if the point is a feasible solution in the bounded region
+    int maxGenerated = 10000;
+    int generated = 1;
+    Matrix<double>* point = generateRandomPoint(minBoundries, maxBoundries);
+    while(!(inBoundPoint(A, b, point)) && generated < maxGenerated){
+        free(point);
+        point = generateRandomPoint(minBoundries, maxBoundries);
+        generated++;
+    }
+    if(generated < maxGenerated){
+        Matrix<double> *feasibleSolution = new Matrix<double>(n+m, 1); 
+        for(int i=0; i<n; i++){
+            feasibleSolution->setAtIndex(i, 0, point->getAtIndex(i, 0));
+        }
+        return feasibleSolution;
+    }
+
+    // No feasible solution in the bounded region is found
+    return nullptr;
+}
+
+void interiorPointAlgorithm(Matrix<double>* C, Matrix<double>* A, Matrix<double>* b, double precision, string purpose, double alpha)
 {
     int m = A->getN(); //number of constraints
     int n = A->getM() - m; //number of coefficients in the original objective function
@@ -700,10 +781,24 @@ void interiorPointAlgorithm(Matrix<double>* C, Matrix<double>* A, Matrix<double>
         return;
     }
 
-    //Check if the method is applicable (The job of tester 1)
-    //If the method is applicable: We need to find an initial point (The job of tester 1)
-    //Step 0: Construct initial feasable solution
-    //For now, we are using the input initial point which is the vector initia_point
+    // Step 1: check if the programming problem is linear or quadratic
+    // In our case, the programming problem is always linear as we only get the input for the coefficients
+    // but now for the terms.
+
+    // Step 2: Verify the objective function is diffrentiable and continuous over the feasible region
+    // The LPP is always linear in this program, therefore it is always differentiable and continuous
+    // over the feasible region
+
+    Matrix<double> *initial_point = new Matrix<double>(n+m, 1);
+    initial_point = findInitialPoint(A, b);
+    
+    
+    if(initial_point == nullptr) // If the feasable region is empty
+    {
+        cout << "The problem does not have a solution!" << endl;
+        return;
+    }
+
     Matrix<double> x = *initial_point;
     cout << "The initial trial solution that lies in the interior of the feasable region:" << endl;
     cout << x << endl;
@@ -722,20 +817,30 @@ void interiorPointAlgorithm(Matrix<double>* C, Matrix<double>* A, Matrix<double>
         }
 
         //Step 2: Calculate AA and cc
-        Matrix<double> AA = (*A) * (*D);
-        Matrix<double> cc = (*D) * (*C);
+        Matrix<double> AA = (*A) * (*D); //[m x n+m]
+        Matrix<double> cc = (*D) * (*C); // [n+m x 1]
 
 
         //Step 3: Calculate P and cp
-        Matrix<double> *I = new IdentityMatrix<double>(n+m);
-        Matrix<double> AAT = AA.transpose();
-        Matrix<double> AA_AAT = AA * AAT;
-        Matrix<double> AA_AAT_inverse = calculateInverse(AA_AAT, n);
-        Matrix<double> temp1 = AAT * AA_AAT_inverse;
-        Matrix<double> temp2 = temp1 * AA;
-        Matrix<double> P = *I - temp2;
+        Matrix<double> *I = new IdentityMatrix<double>(n+m); //[n+m x n+m]
+        cout << *I << endl;
+        Matrix<double> AAT = AA.transpose(); //[n+m x m]
+        cout << "AAT:" << endl << AAT << endl;
+        Matrix<double> AA_AAT = AA * AAT; //[m x m]
+        cout << "AA_AAT:" << endl << AA_AAT << endl;
+        Matrix<double> AA_AAT_inverse = calculateInverse(AA_AAT, m); // [m x m]
+        cout << "AA_AAT_inverse:" << endl << AA_AAT_inverse << endl;
+        Matrix<double> checker = AA_AAT_inverse*AA_AAT;
+        cout << checker << endl;
+        Matrix<double> temp1 = AAT * AA_AAT_inverse; //[n+m x m]
+        cout << "temp1:" << endl << temp1 << endl;
+        Matrix<double> temp2 = temp1 * AA; //[n+m x n+m]
+        cout << "temp2:" << endl << temp2 << endl;
+        Matrix<double> P = *I - temp2; //[n+m x n+m]
+        cout << "P:" << endl << P << endl;
 
-        Matrix<double> cp = P * cc;
+
+        Matrix<double> cp = P * cc; // [n+m x 1]
 
         //Step 4: Identify the most negative element in cp and set v to its abs value
         double v = 1.0; //1.0 is the flag value
@@ -819,17 +924,17 @@ int main()
     cin >> purpose;
 
 
-    Matrix<double> *initial_point = new Matrix<double>(n+m, 1);
-    cout << "Type the " << n+m << " numbers which constitute an initial trial solution that lies in the interior of feasable region:" << endl;
-    cin >> initial_point;
+
+    // cout << "Type the " << n+m << " numbers which constitute an initial trial solution that lies in the interior of feasable region:" << endl;
+    //cin >> initial_point;
 
 
     cout << "------------------------------------------------------------------------------------------------------------------------------------" << endl;
     cout << "Solving for alpha = 0.5..." << endl;
-    interiorPointAlgorithm(C, A, b, precision, purpose, initial_point, 0.5);
+    interiorPointAlgorithm(C, A, b, precision, purpose, 0.5);
     cout << "------------------------------------------------------------------------------------------------------------------------------------" << endl;
     cout << "Solving for alpha = 0.9..." << endl;
-    interiorPointAlgorithm(C, A, b, precision, purpose, initial_point, 0.9);
+    interiorPointAlgorithm(C, A, b, precision, purpose, 0.9);
     cout << "------------------------------------------------------------------------------------------------------------------------------------" << endl;
     
     Matrix<double> *C_transpose = new Matrix<double>(1, n+m);
