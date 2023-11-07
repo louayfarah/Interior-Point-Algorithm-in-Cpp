@@ -12,6 +12,7 @@ const int ny[4] = {0, 0, 1, -1};
 
 using namespace std;
 
+double epsilon = 1e-7;
 
 template<typename T>
 class Matrix
@@ -169,7 +170,7 @@ public:
                 int counter = 0;
                 while(counter < m)
                 {
-                    (*tempF)[i][j] += grid[i][counter]*(*tempA)[counter][j];
+                    (*tempF)[i][j] += (fabs(grid[i][counter]*(*tempA)[counter][j]) > epsilon)?grid[i][counter]*(*tempA)[counter][j]: 0.0;
                     counter++;
                 }
             }
@@ -490,214 +491,17 @@ Matrix<double> calculateInverse(Matrix<double> A, int n)
 }
 
 
-bool solution_found(vector<double> &z_minus_c, int n, double precision)
-{
-    for(int i = 0; i<n; i++)
-    {
-        if(z_minus_c[i] + precision < 0)
-            return false;
-    }
-
-    return true;
-}
-
-bool unbounded_solution(Matrix<double> &curr)
-{
-    for(int i = 0; i<curr.getN(); i++)
-    {
-        if(curr.getAtIndex(i, 0) > 0)
-            return false;
-    }
-
-    return true;
-}
-
-
-
-void simplexMethod(Matrix<double>* C, Matrix<double>* A, Matrix<double>* b, double precision, string &purpose, int mode)
-{
-    int m = A->getN(); //number of constraints
-    int n = A->getM() - m; //number of coefficients in the original objective function
-    //the size of C is n+m
-    //The size of b is m
-
-
-    // Minimum case
-    if(purpose == "minimum")
-    {
-        for(int i = 0; i<m; i++)
-        {
-            C->setAtIndex(0, i, -(C->getAtIndex(0, i)));
-        }
-    }
-    else if(purpose != "maximum")
-    {
-        if (mode==1) cout << "You have to chose either minimum or maximum!" << endl;
-        return;
-    }
-
-    vector<int> basic_vars, non_basic_vars;
-    for(int i = 0; i<n+m; i++)
-    {
-        if(i<n)
-            non_basic_vars.push_back(i);
-        else
-            basic_vars.push_back(i);
-    }
-
-    // Step 0: Construct the initial basic feasible solution
-    Matrix<double> P = A->transpose(); //(n+m, m)
-
-    Matrix<double> *B = new IdentityMatrix<double>(m);
-
-    Matrix<double> *C_b = new Matrix<double>(1, m);
-    for(int i = 0; i<m; i++)
-    {
-        C_b->setAtIndex(0, i, C->getAtIndex(0, C->getM()-m+i));
-    }
-
-    int nb_iteration = 0;
-    if (mode==1) {
-        cout << "Iteration " << nb_iteration << ':' << endl;
-        cout << "B:" << endl;
-        cout << *B;
-        cout << "C_b:" << endl;
-        cout << *C_b << endl;
-    }
-    nb_iteration++;
-
-    while(true)
-    {
-        vector<double> z_minus_c(n, 0);
-        // Step 1: Compute the value of B^(-1) for the basis B using the inversion method
-        Matrix<double> B_inverse = calculateInverse(*B, m);
-
-        Matrix<double> x_b = B_inverse * (*b); //values of basic variables
-
-        // Step 2: Calculate z_i - c_i for each i from 0 to n-1
-        for(int i = 0; i<n; i++)
-        {
-            Matrix<double> *P_i = new Matrix<double>(m, 1);
-            for(int j = 0; j<m; j++)
-            {
-                P_i->setAtIndex(j, 0, P.getAtIndex(non_basic_vars[i], j));
-            }
-
-            Matrix<double> temp = ((*C_b) * B_inverse * (*P_i));
-            z_minus_c[i] = temp.getAtIndex(0, 0) - C->getAtIndex(0, non_basic_vars[i]);
-        }
-
-        for (int i = 0; i<n; i++)
-        {
-           if(mode==1) cout << "z_minus_c[" << i << "] = " << z_minus_c[i] << endl;
-        }
-
-
-        if(solution_found(z_minus_c, n, precision))
-        {
-            Matrix<double> temp = (*C_b) * x_b;
-            double z = temp.getAtIndex(0, 0);
-            if(mode==1) {
-                cout << "Optimal solution found!" << endl;
-                cout << "The vector of decision variables:" << endl;
-                cout << x_b << endl;
-                cout << "The " << purpose << " value of the objective function:" << endl;
-                cout << z << endl;
-            }
-            return;
-        }
-        else
-        {
-            // Step 3: Find P_entering with the smallest z_i - c_i
-            //(for maximization) or the largest (for minimization).
-
-            Matrix<double> *P_entering = new Matrix<double>(m, 1);
-            int entering_i = 0;
-            for(int i = 0; i<n; i++)
-            {
-                if(z_minus_c[i] < z_minus_c[entering_i])
-                    entering_i = i;
-            }
-
-            for(int j = 0; j<m; j++)
-            {
-                P_entering->setAtIndex(j, 0, P.getAtIndex(non_basic_vars[entering_i], j));
-            }
-
-            // Step 4: Compute B^(-1) * P_entering
-            Matrix<double> curr = B_inverse * (*P_entering);
-            if(unbounded_solution(curr))
-            {
-                cout << "Method inapplicable!" << endl;
-                exit(0);
-            }
-            else
-            {
-                // Step 5: find the leaving vector
-                Matrix<double> *P_leaving = new Matrix<double>(m, 1);
-                int leaving_i = 0;
-                for(int j = 0; j<m; j++)
-                {
-                    if( x_b.getAtIndex(j, 0)/curr.getAtIndex(j, 0) < x_b.getAtIndex(leaving_i, 0)/curr.getAtIndex(leaving_i, 0) )
-                        leaving_i = j;
-                }
-
-                for(int j = 0; j<m; j++)
-                {
-                    P_leaving->setAtIndex(j, 0, P.getAtIndex(basic_vars[leaving_i], j));
-                }
-
-                // Update B
-                for(int i = 0; i<m; i++)
-                {
-                    B->setAtIndex(i, leaving_i, P_entering->getAtIndex(i, 0));
-                }
-
-                // Update C_b
-                C_b->setAtIndex(0, leaving_i, C->getAtIndex(0, non_basic_vars[entering_i]));
-
-                // Update basic variables
-                int temp = non_basic_vars[entering_i];
-                non_basic_vars[entering_i] = basic_vars[leaving_i];
-                basic_vars[leaving_i] = temp;
-
-                if(mode == 1) {
-                    cout << "Iteration " << nb_iteration << ':' << endl;
-                    cout << "B:" << endl;
-                    cout << *B;
-                    cout << "C_b:" << endl;
-                    cout << *C_b << endl;
-                    cout << "Basic variables:" << endl;
-                    for (auto elt: basic_vars)
-                        cout << elt + 1 << ' ';
-                    cout << endl << endl;
-                    cout << "Non Basic variables:" << endl;
-                    for (auto elt: non_basic_vars)
-                        cout << elt + 1 << ' ';
-                    cout << endl << endl;
-                }
-            }
-        }
-        nb_iteration++;
-        // turns out that the number of iterations is close to "infinity" => the problem is not bounded
-        if(nb_iteration > 1000){
-            cout << "Method inapplicable!" << endl;
-            exit(0);
-        }
-    }
-}
-
-
 bool interior_point_solution_found(int iteration)
 {
-    if(iteration >= 20)
+    if(iteration >= 30)
         return true;
     return false;
 }
 
-Matrix<double> *generateRandomPoint(Matrix<double>* minBoundries, Matrix<double>* maxBoundries){
-    int n = minBoundries->getM();
-    Matrix<double> *generatedPoint = new Matrix<double>(n, 1);
+Matrix<double> *generateRandomPoint(Matrix<double>* A, Matrix<double>* minBoundries, Matrix<double>* maxBoundries){
+    int m = A->getN();
+    int n = A->getM() - m;
+    Matrix<double> *generatedPoint = new Matrix<double>(n+m, 1);
 
     // Generate a random point within the boundries of each variable
     for(int i=0; i<n; i++){
@@ -723,6 +527,8 @@ bool inBoundPoint(Matrix<double>* A, Matrix<double>* b, Matrix<double>* point){
             LHS = LHS + (A->getAtIndex(i, j)*point->getAtIndex(j, 0));
         }
         if(LHS >= RHS) return false;
+
+        point->setAtIndex(i+n, 0, RHS-LHS);
     }
     return true;
 }
@@ -732,42 +538,31 @@ Matrix<double> *findInitialPoint(Matrix<double> *A, Matrix<double>* b){
     int n = A->getM() - m;
 
     // Matrices to store the minimum and maximum boundries of each varible in the objective function
-    Matrix<double> *minBoundries = new Matrix<double>(1, n);
-    Matrix<double> *maxBoundries = new Matrix<double>(1, n);
+    Matrix<double> *minBoundries = new Matrix<double>(1, n+m);
+    Matrix<double> *maxBoundries = new Matrix<double>(1, n+m);
 
     // Calculate the maximum boundry for each variable in the objective function
-    for(int i=0; i<m; i++){
-        for(int j=0; j<n; j++){
-            double RHS = b->getAtIndex(i, 0);
-            double tmp = RHS / A->getAtIndex(i, j);
-            if(tmp > maxBoundries->getAtIndex(0, j)){
-                maxBoundries->setAtIndex(0, j, tmp);
-            }
-        }
+    for(int i=0; i<n; i++){
+        maxBoundries->setAtIndex(0, i, 100);
     }
 
-    // Check if the maximum boundary of a variable is negative (or zero)
-    for(int i=0; i<n; i++){
-        if(maxBoundries->getAtIndex(0, i) == 0){
-            return nullptr;
-        }
-    }
 
     // Generate random points within the boundries of each variable
     // Check if the point is a feasible solution in the bounded region
-    int maxGenerated = 10000;
+    int maxGenerated = 100000;
     int generated = 1;
-    Matrix<double>* point = generateRandomPoint(minBoundries, maxBoundries);
+    Matrix<double>* point = generateRandomPoint(A, minBoundries, maxBoundries);
     while(!(inBoundPoint(A, b, point)) && generated < maxGenerated){
         free(point);
-        point = generateRandomPoint(minBoundries, maxBoundries);
+        point = generateRandomPoint(A, minBoundries, maxBoundries);
         generated++;
     }
     if(generated < maxGenerated){
         Matrix<double> *feasibleSolution = new Matrix<double>(n+m, 1); 
-        for(int i=0; i<n; i++){
+        for(int i=0; i<n+m; i++){
             feasibleSolution->setAtIndex(i, 0, point->getAtIndex(i, 0));
         }
+    
         return feasibleSolution;
     }
 
@@ -829,7 +624,7 @@ void interiorPointAlgorithm(Matrix<double>* C, Matrix<double>* A, Matrix<double>
     //For each iteration
     while(true)
     {
-        cout << "Iteration " << iteration << ':' << endl;
+        cout << "Iteration " << iteration << ':' << endl << endl;
         //Check if the problem has a solution (most probably about unbounded problem) (The job of tester 2)
         //Step 1: Calculate D
         Matrix<double> *D = new Matrix<double>(n+m, n+m);
@@ -843,26 +638,23 @@ void interiorPointAlgorithm(Matrix<double>* C, Matrix<double>* A, Matrix<double>
         Matrix<double> cc = (*D) * (*C); // [n+m x 1]
 
 
+
         //Step 3: Calculate P and cp
         Matrix<double> *I = new IdentityMatrix<double>(n+m); //[n+m x n+m]
-        cout << *I << endl;
         Matrix<double> AAT = AA.transpose(); //[n+m x m]
-        cout << "AAT:" << endl << AAT << endl;
         Matrix<double> AA_AAT = AA * AAT; //[m x m]
-        cout << "AA_AAT:" << endl << AA_AAT << endl;
-        Matrix<double> AA_AAT_inverse = calculateInverse(AA_AAT, m); // [m x m]
-        cout << "AA_AAT_inverse:" << endl << AA_AAT_inverse << endl;
+        Matrix<double> AA_AAT_inverse = calculateInverse(AA_AAT, AA_AAT.getN()); // [m x m]
         Matrix<double> checker = AA_AAT_inverse*AA_AAT;
-        cout << checker << endl;
         Matrix<double> temp1 = AAT * AA_AAT_inverse; //[n+m x m]
-        cout << "temp1:" << endl << temp1 << endl;
         Matrix<double> temp2 = temp1 * AA; //[n+m x n+m]
-        cout << "temp2:" << endl << temp2 << endl;
         Matrix<double> P = *I - temp2; //[n+m x n+m]
-        cout << "P:" << endl << P << endl;
+
+        cout << "P in iteration " << iteration << ':' << endl;
+        cout << P;
 
 
         Matrix<double> cp = P * cc; // [n+m x 1]
+        cout << "cp in iteration " << iteration << ':' << endl;
 
         //Step 4: Identify the most negative element in cp and set v to its abs value
         double v = 1.0; //1.0 is the flag value
@@ -873,6 +665,8 @@ void interiorPointAlgorithm(Matrix<double>* C, Matrix<double>* A, Matrix<double>
                     v = cp.getAtIndex(i, 0);
         }
         v = fabs(v);
+        cout << "the value of v in the iteration " << iteration << ':' << endl;
+        cout << v << endl << endl;
         //Calculate xx
         Matrix<double> *one_vector = new Matrix<double>(n+m, 1);
         Matrix<double> *cp_alpha_v = new Matrix<double>(n+m, 1);
@@ -888,9 +682,14 @@ void interiorPointAlgorithm(Matrix<double>* C, Matrix<double>* A, Matrix<double>
         Matrix<double> temp = (*D) * xx;
         x = temp;
 
+        cout << "Current vector x:" << endl;
+        cout << x << endl;
         //Check the precision of x
         Matrix<double> CT = C->transpose();
+
         Matrix<double> res = CT * x;
+        cout << "Current result:" << endl;
+        cout << res;
 
         if(isOptimal(prevObjectiveValue, res.getAtIndex(0, 0), precision) || interior_point_solution_found(iteration))
         {
@@ -911,6 +710,11 @@ void interiorPointAlgorithm(Matrix<double>* C, Matrix<double>* A, Matrix<double>
         }
         prevObjectiveValue = res.getAtIndex(0, 0);
         iteration++;
+        // turns out that the number of iterations is close to "infinity" => the problem is not bounded
+        if(iteration > 1000){
+            cout << "Interior Point Method inapplicable!" << endl;
+            exit(0);
+        }
     }
 
 }
@@ -922,6 +726,7 @@ int main()
     int n;
     cout << "Type the number of variables in the objective function:" << endl;
     cin >> n;
+
 
     int m;
     cout << "Type the number of constraint functions:" << endl;
@@ -950,13 +755,6 @@ int main()
     cin >> purpose;
 
     cout << "------------------------------------------------------------------------------------------------------------------------------------" << endl;
-    cout << "Checking the problem for unbounded..."<<endl;
-    Matrix<double> *C_transpose = new Matrix<double>(1, n+m);
-    for(int i = 0; i<n+m; i++)
-        C_transpose->setAtIndex(0, i, C->getAtIndex(i, 0));
-    simplexMethod(C_transpose, A, b, precision, purpose, 0);
-    cout << "The given problem is correctly defined and has bounds"<<endl;
-
 
     cout << "------------------------------------------------------------------------------------------------------------------------------------" << endl;
     cout << "Solving for alpha = 0.5..." << endl;
@@ -965,11 +763,6 @@ int main()
     cout << "Solving for alpha = 0.9..." << endl;
     interiorPointAlgorithm(C, A, b, precision, purpose, 0.9);
     cout << "------------------------------------------------------------------------------------------------------------------------------------" << endl;
-
-    for(int i = 0; i<n+m; i++)
-        C_transpose->setAtIndex(0, i, C->getAtIndex(i, 0));
-    cout << "Comparing with the solution from Simplex Method..." << endl;
-    simplexMethod(C_transpose, A, b, precision, purpose, 1);
 
     return 0;
 }
